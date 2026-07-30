@@ -1,0 +1,6 @@
+opencv-python
+numpy
+
+# Installed ahead of future phases (detection/tracking). Not used in Phase 1.
+ultralytics
+lap

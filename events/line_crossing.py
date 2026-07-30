@@ -201,6 +201,16 @@ class LineCrossingDetector:
         self._last_seen_time: Dict[int, float] = {}
         self._last_event_time: Dict[int, float] = {}
 
+    @property
+    def line_start(self) -> Tuple[int, int]:
+        """The virtual line's first endpoint actually in use, in pixels (see __init__)."""
+        return self._line_start
+
+    @property
+    def line_end(self) -> Tuple[int, int]:
+        """The virtual line's second endpoint actually in use, in pixels (see __init__)."""
+        return self._line_end
+
     @staticmethod
     def compute_centroid(track: TrackedPerson) -> Tuple[int, int]:
         """
@@ -272,6 +282,11 @@ class LineCrossingDetector:
             except Exception as exc:
                 logger.warning("Skipping line-crossing check for track %s: invalid centroid (%s)", track.track_id, exc)
                 continue
+
+            logger.debug(
+                "Track %s centroid=%s side=%.1f (line %s -> %s)",
+                track.track_id, centroid, side, self._line_start, self._line_end,
+            )
 
             if side == 0:
                 # Exactly on the line: ambiguous. Wait for a future frame

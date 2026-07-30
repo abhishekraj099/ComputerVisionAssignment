@@ -173,12 +173,24 @@ FALLBACK_MAX_MATCH_DISTANCE = 75
 FALLBACK_STALE_TRACK_TIMEOUT = 1.0
 
 # --- Entry/Exit virtual line crossing (Phase 4) ---
-# Endpoints of the virtual line tracked people are checked against, as
-# (x, y) pixel coordinates in the same space as the video frame. Valid
-# values: any two distinct points; a horizontal line (as in the default
-# below) makes crossings map directly to "top of frame" vs "bottom of
-# frame". Exists so the line's position/orientation can be adjusted per
-# camera setup without touching detection code.
+# The virtual line is positioned as a fraction of the *actual* opened
+# frame's width/height (see app.load_line_crossing_detector()), not a fixed
+# pixel position - a fixed pixel line tuned for one resolution (e.g.
+# 640x480) ends up in the wrong place (too near an edge, or off-screen
+# entirely) on a webcam or uploaded video of a different resolution, which
+# silently prevents any crossing from ever being detected. (0.15, 0.6) to
+# (0.85, 0.6) draws a horizontal line spanning most of the frame's width at
+# 60% of its height, regardless of actual resolution. Valid values: two
+# (x_fraction, y_fraction) points in [0.0, 1.0]; a horizontal line (as in
+# the default below) makes crossings map directly to "top of frame" vs
+# "bottom of frame".
+LINE_START_RATIO = (0.15, 0.6)
+LINE_END_RATIO = (0.85, 0.6)
+
+# Fallback absolute pixel coordinates, used only if the actual frame
+# width/height are not known yet (e.g. a caller that builds
+# LineCrossingDetector directly without resolving them first). Matches the
+# ratio-based default above at a ~640x480 frame.
 LINE_START = (100, 250)
 LINE_END = (550, 250)
 
@@ -278,11 +290,14 @@ MOTION_LABEL_OFFSET_Y = 15
 # Smoothed (rolling-average) bounding-box height-to-width ratio above
 # which a tracked person is classified STANDING rather than SEATED. Valid
 # values: a positive float. This is a coarse heuristic, not a calibrated
-# measurement - 1.2 is a reasonable starting point (a standing person's
-# full-body box is usually noticeably taller than wide; a seated person's
-# box tends to be closer to square or wider), but the right value depends
+# measurement. Raised from an earlier 1.2 to 1.8 after live testing showed
+# 1.2 over-classified seated people as Standing: a YOLO "person" box for
+# someone seated at a desk (head/shoulders/torso visible, angled CCTV view)
+# commonly still measures a 1.3-1.7 height/width ratio, which 1.2 wrongly
+# called Standing. A standing full-body box is usually markedly taller
+# (2.0+), so 1.8 gives a clearer margin - but the right value still depends
 # heavily on camera angle/distance and may need tuning per deployment.
-POSTURE_ASPECT_RATIO_THRESHOLD = 1.2
+POSTURE_ASPECT_RATIO_THRESHOLD = 1.8
 
 # Number of recent per-frame aspect ratios averaged together, per track,
 # before comparing against POSTURE_ASPECT_RATIO_THRESHOLD. Valid values: a

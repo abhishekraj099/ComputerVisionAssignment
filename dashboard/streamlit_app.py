@@ -185,7 +185,10 @@ def _handle_start(source_mode: str, uploaded_file) -> None:
         if st.session_state.capture is None:
             st.session_state.capture = _open_capture(source_mode, uploaded_file)
         if st.session_state.components is None:
-            st.session_state.components = app.build_pipeline_components()
+            capture = st.session_state.capture
+            frame_width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)) or None
+            frame_height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)) or None
+            st.session_state.components = app.build_pipeline_components(frame_width, frame_height)
         st.session_state.running = True
     except RuntimeError as exc:
         st.session_state.error_message = str(exc)

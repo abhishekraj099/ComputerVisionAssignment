@@ -245,6 +245,12 @@ class PostureDetector:
 
             is_standing = smoothed_ratio > self._aspect_ratio_threshold
 
+            logger.debug(
+                "Track %s aspect_ratio=%.2f smoothed=%.2f threshold=%.2f -> %s",
+                track.track_id, aspect_ratio, smoothed_ratio, self._aspect_ratio_threshold,
+                "STANDING" if is_standing else "SEATED",
+            )
+
             previous_logged_state = self._last_logged_state.get(track.track_id)
             if previous_logged_state is not None and previous_logged_state != is_standing:
                 logger.info(

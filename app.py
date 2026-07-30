@@ -96,7 +96,7 @@ Which future modules will consume this module's output:
 
 import sys
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 import cv2
 
@@ -318,22 +318,56 @@ def load_person_tracker(detector):
     )
 
 
-def load_line_crossing_detector() -> LineCrossingDetector:
+def load_line_crossing_detector(frame_width: Optional[int] = None, frame_height: Optional[int] = None) -> LineCrossingDetector:
     """
     Build the LineCrossingDetector from config.
 
+    Args:
+        frame_width: The actual opened video source's frame width, in
+            pixels, if known (see build_pipeline_components()). When given
+            (with frame_height), the virtual line is positioned from
+            config.LINE_START_RATIO/LINE_END_RATIO scaled to this frame's
+            real size, so it lands in a sensible place regardless of the
+            source's resolution. When omitted, falls back to
+            config.LINE_START/LINE_END (a fixed pixel position tuned for a
+            ~640x480 frame) - kept only for callers that genuinely don't
+            know the frame size yet.
+        frame_height: See frame_width.
+
     Returns:
-        A ready-to-use LineCrossingDetector for the configured virtual
-        line (config.LINE_START / config.LINE_END), with its stale-track
-        timeout and event cooldown set from config.
+        A ready-to-use LineCrossingDetector for the resolved virtual line,
+        with its stale-track timeout and event cooldown set from config.
 
     Raises:
         Does not raise; construction is pure bookkeeping (see
         LineCrossingDetector.__init__).
     """
+    if frame_width and frame_height:
+        line_start = (
+            int(frame_width * config.LINE_START_RATIO[0]),
+            int(frame_height * config.LINE_START_RATIO[1]),
+        )
+        line_end = (
+            int(frame_width * config.LINE_END_RATIO[0]),
+            int(frame_height * config.LINE_END_RATIO[1]),
+        )
+        logger.info(
+            "Virtual line resolved from frame size %dx%d: %s -> %s",
+            frame_width, frame_height, line_start, line_end,
+        )
+    else:
+        line_start = config.LINE_START
+        line_end = config.LINE_END
+        logger.warning(
+            "Frame size not provided to load_line_crossing_detector(); "
+            "falling back to fixed pixel line %s -> %s, which may be "
+            "mis-positioned for this source's actual resolution.",
+            line_start, line_end,
+        )
+
     return LineCrossingDetector(
-        line_start=config.LINE_START,
-        line_end=config.LINE_END,
+        line_start=line_start,
+        line_end=line_end,
         stale_track_timeout=config.LINE_CROSSING_STALE_TRACK_TIMEOUT,
         event_cooldown=config.LINE_CROSSING_EVENT_COOLDOWN,
     )
@@ -503,7 +537,7 @@ class PipelineFrameResult:
     fps: float
 
 
-def build_pipeline_components() -> PipelineComponents:
+def build_pipeline_components(frame_width: Optional[int] = None, frame_height: Optional[int] = None) -> PipelineComponents:
     """
     Construct every stateful pipeline object for one run, bundled together.
 
@@ -511,6 +545,16 @@ def build_pipeline_components() -> PipelineComponents:
     dashboard.streamlit_app build the pipeline from - it does nothing
     beyond calling the existing load_*() functions above and bundling
     their results; no construction logic is duplicated anywhere else.
+
+    Args:
+        frame_width: The opened video source's actual frame width, in
+            pixels, if known - passed straight through to
+            load_line_crossing_detector() so the virtual line is
+            positioned correctly for this source's real resolution rather
+            than a fixed pixel guess. Both callers (run_pipeline(),
+            dashboard.streamlit_app._handle_start()) read this from their
+            already-opened cv2.VideoCapture before calling this function.
+        frame_height: See frame_width.
 
     Returns:
         A ready-to-use PipelineComponents.
@@ -530,7 +574,7 @@ def build_pipeline_components() -> PipelineComponents:
     return PipelineComponents(
         detector=detector,
         tracker=load_person_tracker(detector),
-        line_crossing_detector=load_line_crossing_detector(),
+        line_crossing_detector=load_line_crossing_detector(frame_width, frame_height),
         event_board=EventNotificationBoard(config.EVENT_DISPLAY_DURATION),
         attendance_manager=load_attendance_manager(),
         motion_detector=load_motion_detector(),
@@ -630,7 +674,13 @@ def process_frame(frame, components: PipelineComponents) -> PipelineFrameResult:
         logger.info("%s : ID %s", event.event_type.value, event.track_id)
     components.event_board.add_events(crossing_events)
 
-    draw_line(frame, config.LINE_START, config.LINE_END, config.LINE_COLOR, config.LINE_THICKNESS)
+    draw_line(
+        frame,
+        components.line_crossing_detector.line_start,
+        components.line_crossing_detector.line_end,
+        config.LINE_COLOR,
+        config.LINE_THICKNESS,
+    )
     draw_events(
         frame,
         components.event_board.get_visible_events(),
@@ -730,7 +780,9 @@ def run_pipeline() -> None:
         calls are comparatively cheap.
     """
     capture = open_video_source()
-    components = build_pipeline_components()
+    frame_width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)) or None
+    frame_height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)) or None
+    components = build_pipeline_components(frame_width, frame_height)
 
     try:
         while True:

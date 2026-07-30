@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+
+logs/
+
+# Auto-downloaded by Ultralytics on first run - not source, and large.
+models/yolov8n.pt

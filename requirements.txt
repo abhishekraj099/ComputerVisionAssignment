@@ -1,6 +1,11 @@
 opencv-python
 numpy
 
-# Installed ahead of future phases (detection/tracking). Not used in Phase 1.
+# ultralytics (YOLOv8) is used for person detection as of Phase 2.
 ultralytics
+
+# lap is used internally by Ultralytics' ByteTrack integration for box matching, as of Phase 3.
 lap
+
+# streamlit powers the optional web dashboard (dashboard/streamlit_app.py), as of Phase 10.
+streamlit

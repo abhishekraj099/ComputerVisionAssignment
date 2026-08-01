@@ -322,7 +322,6 @@ def _render_statistics(stats_container) -> None:
         col_a, col_b = st.columns(2)
         col_a.metric("FPS", f"{fps:.1f}")
         col_b.metric("Persons", person_count)
-        st.caption("Persons = people detected in the current frame.")
 
         st.markdown("**Attendance**")
         if result:
@@ -335,17 +334,6 @@ def _render_statistics(stats_container) -> None:
             )
         else:
             st.write("No data yet.")
-        # Attendance is line-crossing based by design (see
-        # attendance/attendance_manager.py). Someone already seated when the
-        # stream starts never crosses the line, so they are correctly counted
-        # under "Persons" but not under "Current Inside" - these two numbers
-        # measure different things and are expected to differ. Stating that
-        # here prevents the pairing from reading as a bug.
-        st.caption(
-            "Attendance counts virtual-line crossings, not everyone on screen - "
-            "people already seated before the stream started never cross the line, "
-            "so Current Inside can be 0 while Persons is high."
-        )
 
         st.markdown("**Motion Summary**")
         if result:
@@ -380,16 +368,6 @@ def _render_statistics(stats_container) -> None:
             )
         else:
             st.write("No data yet.")
-        # OccupancyDetector reads AttendanceStatistics.current_people as its
-        # single source of truth for "People" (never the tracked-person count -
-        # see occupancy/occupancy_detector.py). It therefore inherits the
-        # line-crossing semantics explained under Attendance above: EMPTY here
-        # means "nobody has crossed in", not "nobody is visible".
-        st.caption(
-            "Occupancy is derived from Attendance, so it uses the same "
-            "line-crossing basis: EMPTY means nobody has crossed in yet, "
-            "even if seated people are visible."
-        )
 
         st.markdown("**Recent Entry / Exit Events**")
         if st.session_state.recent_events:

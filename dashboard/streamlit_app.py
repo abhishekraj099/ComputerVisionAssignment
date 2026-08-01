@@ -311,6 +311,17 @@ def _render_statistics(stats_container) -> None:
         Writes Streamlit widgets. Reads st.session_state.last_result only
         - never recomputes anything; if no result exists yet (nothing
         processed since the last Reset), shows placeholder zero values.
+
+    Note on the two attendance sections:
+        "Live Attendance" (Current Present) and "Visitor Analytics"
+        (Current Inside / Entries / Exits / Unique Visitors) deliberately
+        measure different things and are expected to differ. Live
+        Attendance is simply how many tracked people are visible in this
+        frame (`len(result.tracks)`); Visitor Analytics is the unchanged
+        line-crossing attendance from AttendanceManager, in which someone
+        already seated before the stream started never crosses the virtual
+        line and so is correctly not counted. Neither section recomputes
+        anything - both read values process_frame() already produced.
     """
     result = st.session_state.last_result
 
@@ -323,7 +334,22 @@ def _render_statistics(stats_container) -> None:
         col_a.metric("FPS", f"{fps:.1f}")
         col_b.metric("Persons", person_count)
 
-        st.markdown("**Attendance**")
+        # "Live Attendance" is a presentation-only view of how many people
+        # are visible right now. It reads the exact same
+        # `len(result.tracks)` already shown as the "Persons" metric above -
+        # the tracked-person list process_frame() has already produced -
+        # so it runs no detection, builds no tracker, and computes nothing
+        # new. It deliberately does NOT come from AttendanceStatistics:
+        # "Visitor Analytics" below remains the untouched line-crossing
+        # attendance, and these two sections answer different questions
+        # ("who is on screen now" vs "who has crossed the line").
+        st.markdown("**Live Attendance**")
+        if result:
+            st.write(f"Current Present: {person_count}")
+        else:
+            st.write("No data yet.")
+
+        st.markdown("**Visitor Analytics**")
         if result:
             stats = result.attendance_stats
             st.write(

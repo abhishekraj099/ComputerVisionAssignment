@@ -28,16 +28,14 @@ track_high_thresh: 0.3
 # behind a classmate/desk) keep their existing ID instead of being dropped.
 track_low_thresh: 0.1
 
-# Minimum confidence to start a brand-new track. Lowered 0.4 -> 0.25, and
-# this is the single most important value for the reported "person count
-# reads low in crowded scenes" symptom. The displayed person count counts
-# *tracks*, not raw detections, so any detection below this threshold is
-# invisible in the UI no matter how low DETECTION_CONFIDENCE_THRESHOLD is
-# set. Measured directly: of the detections recovered by lowering that
-# floor to 0.20, every single one scored 0.25-0.26 and was being discarded
-# here, meaning the detection change alone would have improved the count by
-# exactly zero. 0.25 admits them while still rejecting the weakest boxes.
-new_track_thresh: 0.25
+# Minimum confidence to start a brand-new track. Set to 0.20 to match
+# DETECTION_CONFIDENCE_THRESHOLD exactly. This matters more than it looks:
+# the displayed person count counts *tracks*, not raw detections, so any
+# detection scoring below this value is invisible in the UI no matter how
+# low the detection threshold is set. Leaving this above the detection
+# floor silently discards exactly the small/occluded students that lowering
+# the floor was meant to recover.
+new_track_thresh: 0.20
 
 # Number of frames a lost track is kept alive, awaiting a re-match, before
 # being dropped entirely. Raised from Ultralytics' default 30 to 60 -

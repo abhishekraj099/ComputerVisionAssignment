@@ -98,52 +98,43 @@ DETECTION_MODEL_PATH = "models/yolov8n.pt"
 PERSON_CLASS_ID = 0
 
 # Minimum confidence, in the closed range 0.0-1.0, for a detection to be
-# kept. Exists to filter out low-confidence, noisy boxes. Lowered 0.5 ->
-# 0.35 -> 0.20 across two accuracy passes against crowded classroom-style
-# scenes, where person count was reading low (e.g. 11 detected of 16
-# visible). Measured on benchmark scenes built from real person imagery at
-# classroom scale: 0.35 scored 62.7% recall / 100% precision, 0.20 scores
-# 70.6% recall / 97.3% precision (F1 0.771 -> 0.818). Small, distant and
-# desk-occluded people frequently score 0.20-0.35, so 0.35 was discarding
-# genuine detections. The ~3-point precision cost is a small number of
-# duplicate boxes, which is the better trade for this use case.
+# kept. Exists to filter out low-confidence, noisy boxes.
+#
+# Tuned against the supplied classroom video (assets/classroom.mp4), where
+# roughly 23-24 people are visible per frame. Measured average detected
+# person count over frames sampled across the whole clip:
+#   conf 0.35 -> 15.6    conf 0.25 -> 21.0
+#   conf 0.20 -> 23.6    conf 0.15 -> 26.9
+# 0.35 badly undercounts (small, desk-occluded, back-row students score
+# below it). 0.15 overshoots the true count, i.e. it starts inventing
+# people. 0.20 tracks the visible count most closely and is used here.
 #
 # NOTE: this value only takes effect if ByteTrack's new_track_thresh (see
 # tracker/bytetrack_tuned.yaml) is at or below it - otherwise these
-# recovered detections are found but never allowed to start a track, and
-# the displayed person count (which counts tracks, not raw detections)
-# does not change at all. The two must be tuned together.
+# detections are found but never allowed to start a track, and the
+# displayed person count (which counts tracks, not raw detections) does
+# not change at all. The two must be tuned together.
 DETECTION_CONFIDENCE_THRESHOLD = 0.20
 
 # IoU threshold used by YOLO's own NMS step (duplicate-box suppression).
-# Valid values: 0.0-1.0. Lowered from Ultralytics' default of 0.7 to 0.5 -
-# 0.7 was letting near-duplicate boxes for the same person survive NMS
-# (inflating person-count/false positives), while 0.5 still comfortably
-# preserves two genuinely distinct, closely-seated people (their boxes
-# rarely overlap anywhere near 50% even at a crowded desk) as separate
-# detections.
-#
-# Re-tested during the recall-tuning pass at 0.45/0.50/0.60/0.70 and left
-# unchanged: at the chosen conf/imgsz, 0.45, 0.50 and 0.60 produce
-# byte-identical results (36 true positives, 1 false positive), while 0.70
-# adds false positives with no recall gain. 0.5 is therefore kept rather
-# than churned for no measured benefit.
-DETECTION_IOU_THRESHOLD = 0.5
+# Valid values: 0.0-1.0. Set to 0.6 from the classroom-video tuning pass.
+# In this footage students sit close together in rows, so their boxes
+# genuinely overlap; at 0.50 NMS was suppressing real neighbours (average
+# detected count 21.0 vs 23.6 at 0.60 against ~23-24 visible), and visual
+# inspection of a sample frame showed 0.50 additionally emitting a
+# duplicate pair on one student that 0.60 resolved to a single box.
+DETECTION_IOU_THRESHOLD = 0.6
 
 # Inference resolution (the side length YOLO resizes/pads the frame to
 # before the forward pass), in pixels; must be a multiple of 32. Valid
-# values: any such multiple of 32. Raised 640 -> 832 -> 960 across two
-# accuracy passes - a wide classroom shot shrinks each person to a small
-# fraction of the frame, and YOLOv8 (like any anchor-free detector)
-# systematically misses more of those small boxes at lower resolutions.
+# values: any such multiple of 32.
 #
-# 960 was chosen empirically over 832 and 1088: measured on classroom-scale
-# benchmark scenes, 960 gave the best precision at equal-or-better recall
-# (70.6% recall / 97.3% precision), whereas 1088 recovered no additional
-# people but produced noticeably more duplicate boxes (down to 85% and, at
-# looser NMS, 71% precision) for ~25% less throughput. Bigger is therefore
-# not simply better here; 960 is the measured optimum.
-DETECTION_IMAGE_SIZE = 960
+# 832 chosen from the classroom-video sweep. At the selected conf/NMS,
+# average detected person count was 23.6 at imgsz 832 and 24.0 at 1280 -
+# a +0.4 difference - while throughput more than halved (9.4 -> 4.0 frames
+# per second on CPU). The extra resolution is not worth that cost here, so
+# 832 is used. Note the source is 1280x720, so 832 still downscales it.
+DETECTION_IMAGE_SIZE = 832
 
 # Compute device for YOLO inference. Valid values: "auto", "cpu", or
 # "cuda". "auto" (the default) picks GPU (CUDA) automatically if available,

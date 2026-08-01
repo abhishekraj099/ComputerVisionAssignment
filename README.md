@@ -104,32 +104,45 @@ streamlit run dashboard/streamlit_app.py
 ## Accuracy Tuning
 
 All detection/tracking/classification parameters live in `config.py` (plus
-`tracker/bytetrack_tuned.yaml` for ByteTrack). Values below were tuned for
-classroom CCTV footage — mostly-seated, sometimes partially-occluded people
-viewed from a fixed angled camera:
+`tracker/bytetrack_tuned.yaml` for ByteTrack). Detection values were tuned
+directly against the supplied classroom video (`assets/classroom.mp4`,
+1280x720, 2150 frames), in which roughly 23-24 people are visible per frame.
 
-| Parameter | Before | After | Why |
-|---|---|---|---|
-| `DETECTION_CONFIDENCE_THRESHOLD` | 0.5 | **0.20** | Small/desk-occluded people often score 0.20–0.35; higher floors discarded them (recall 62.7% → 70.6%) |
-| `DETECTION_IOU_THRESHOLD` (NMS) | 0.7 (default) | **0.5** | 0.7 let near-duplicate boxes for one person survive NMS, inflating person count |
-| `DETECTION_IMAGE_SIZE` (`imgsz`) | 640 (default) | **960** | Wide shots shrink each person; measured optimum — 1088 added duplicates without recovering anyone |
-| `track_high_thresh` | 0.25 | **0.3** | Tracks the detection floor; at 0.5 recovered low-confidence people were excluded from first-stage matching |
-| `new_track_thresh` | 0.25 | **0.25** | Person Count counts *tracks*: at 0.4 every recovered 0.25–0.26 detection was discarded, so lowering `conf` alone changed nothing |
-| `track_buffer` | 30 | **60** | At low CPU FPS, 30 frames covered too short an occlusion → new IDs on reappearance |
-| `match_thresh` | 0.8 | **0.75** | Slightly more tolerant of CCTV box jitter → fewer rejected valid matches |
-| `POSTURE_ASPECT_RATIO_THRESHOLD` | 1.2 | **1.8** | Seated-at-desk boxes measure 1.3–1.7 and were wrongly called Standing |
-| `POSTURE_HISTORY_SIZE` | 5 | **8** | Damps STANDING↔SEATED oscillation from ratio jitter near the threshold |
-| `MOTION_DISTANCE_THRESHOLD` | 15.0 | **20.0** | At low CPU FPS, box jitter alone exceeded 15.0 for genuinely still people |
-| `MOTION_HISTORY_SIZE` | 5 | **7** | Further damps single-frame jitter |
-| `BLUR_THRESHOLD` | 100.0 | 100.0 (unchanged) | Verified well-calibrated: sharp frames ≥ 984, blurry ≤ 4.3 |
+Average detected person count over frames sampled across the whole clip:
 
-`tracker/bytetrack_tuned.yaml` keeps `tracker_type: bytetrack` — the algorithm
+| conf | NMS IoU | imgsz | avg count | max | FPS |
+|---|---|---|---|---|---|
+| 0.35 | 0.50 | 832 | 15.6 | 19 | 5.2 |
+| 0.25 | 0.60 | 832 | 21.0 | 27 | 8.4 |
+| **0.20** | **0.60** | **832** | **23.6** | 29 | 9.4 |
+| 0.20 | 0.60 | 1280 | 24.0 | 29 | 4.0 |
+| 0.15 | 0.60 | 832 | 26.9 | 32 | 9.3 |
+
+Against ~23-24 visible, `conf=0.20 / iou=0.60 / imgsz=832` tracks the true
+count most closely. `conf=0.15` overshoots (invents people); `imgsz=1280`
+adds +0.4 count for less than half the throughput.
+
+| Parameter | Value | Why |
+|---|---|---|
+| `DETECTION_CONFIDENCE_THRESHOLD` | **0.20** | 0.35 undercounts badly (15.6 vs ~23 visible); 0.15 overshoots |
+| `DETECTION_IOU_THRESHOLD` (NMS) | **0.6** | Students sit close together; 0.50 suppressed real neighbours and emitted a duplicate box |
+| `DETECTION_IMAGE_SIZE` (`imgsz`) | **832** | 1280 gained +0.4 count for >2x the cost |
+| `FRAME_WIDTH` / `FRAME_HEIGHT` | **None** | Native resolution; downscaling would destroy small-person recall |
+| `new_track_thresh` | **0.20** | Matches the detection floor - person count counts *tracks*, so a higher value silently discards recovered detections |
+| `track_high_thresh` | **0.3** | Tracks the detection floor |
+| `track_buffer` | **60** | At low CPU FPS, 30 frames covered too short an occlusion |
+| `match_thresh` | **0.75** | Tolerant of CCTV box jitter |
+| `POSTURE_ASPECT_RATIO_THRESHOLD` | **1.8** | Seated-at-desk boxes measure 1.3-1.7 and were wrongly called Standing |
+| `POSTURE_HISTORY_SIZE` | **8** | Damps STANDING/SEATED oscillation near the threshold |
+| `MOTION_DISTANCE_THRESHOLD` | **20.0** | At low CPU FPS, box jitter alone exceeded 15.0 for still people |
+| `MOTION_HISTORY_SIZE` | **7** | Damps single-frame jitter |
+| `BLUR_THRESHOLD` | **100.0** | Unchanged |
+
+`tracker/bytetrack_tuned.yaml` keeps `tracker_type: bytetrack` - the algorithm
 is unchanged, only its thresholds are retuned.
 
-**Measured result** on crowded classroom-scale benchmark scenes (51 people across
-three scenes, built from real person imagery): Person Count **26 → 34** (51.0% →
-66.7% recall) with ID stability unchanged (churn ratio 1.00). **Trade-off:** ~15%
-fewer FPS (5.4 → 4.6 on the densest scene); still ample for this use case.
+**Known miss:** a student at the bottom-left frame edge, heavily cropped and
+occluded by her desk, is not detected at any tested setting.
 
 ## Requirements
 

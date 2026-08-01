@@ -391,33 +391,26 @@ POSTURE_ASPECT_RATIO_THRESHOLD = 2.4
 
 # Fraction of a track's own tallest-ever bounding box that its current box
 # must still reach for that track to keep its STANDING classification once
-# the aspect ratio alone stops confirming it. Valid values: 0.0-1.0, where
-# 1.0 effectively disables the rule (only the raw aspect ratio is used).
+# the aspect ratio alone stops confirming it. Valid values: 0.0-1.0.
 #
-# Exists because aspect ratio alone cannot separate a standing person whose
-# legs are hidden behind a desk from a genuinely seated one - measured on
-# real footage a standing person reads as low as 1.23 while a seated one
-# reads up to 2.38, so the populations overlap and no threshold splits them.
-# A track's own history does separate them: someone standing behind a desk
-# was tall moments earlier, someone seated throughout never was. 0.75 keeps
-# STANDING while the box stays within a quarter of that track's maximum
-# height, and releases it when the box collapses further, which is what
-# happens when the person actually sits down.
+# DISABLED (1.0 = rule off) after measuring it on real footage. The rule was
+# added to fix standing people whose legs are hidden by a desk reading as
+# SEATED, and it did help that case (49% -> 87% standing on a CCTV clip).
+# But it made the opposite case much worse: when someone genuinely sits
+# down, their box height only falls to 0.44-0.68 of their standing height
+# (measured over four tracks), which is not a large enough collapse to
+# release the retained STANDING. On a frame where five people were all
+# seated it reported 2.75 standing per frame; with the rule off the same
+# frames report 0.45.
 #
-# Measured on both clips (CCTV clip = everyone standing, classroom = all
-# seated but one invigilator), % of tracks reported STANDING:
-#     retention 1.00 (rule off) -> CCTV 49%   classroom 0.73/frame
-#     retention 0.55            -> CCTV 79%   classroom 0.73/frame
-#     retention 0.40            -> CCTV 87%   classroom 0.73/frame
-#     retention 0.30            -> CCTV 97%   classroom 0.73/frame
-# The classroom figure is identical at every value: students who are seated
-# from the start are never confirmed STANDING, so the rule cannot touch
-# them and carries no regression risk there. 0.40 is used rather than 0.30
-# because a person who genuinely sits at a desk drops to roughly 40% of
-# their standing box height, so a lower value would hold them STANDING
-# through a real sit-down - which is exactly the transition attendance
-# depends on.
-POSTURE_STANDING_HEIGHT_RETENTION = 0.40
+# The underlying reason no setting works: a desk hiding someone's legs and
+# that same person sitting down produce nearly identical bounding boxes, so
+# height alone cannot tell them apart. The plain aspect-ratio threshold
+# handles the sit-down case correctly on its own (seated tracks measured
+# 1.18-2.21, standing 3.29-4.99), so it is used unaided. Set this below 1.0
+# only for a camera where standing people are routinely leg-occluded and
+# nobody sits down.
+POSTURE_STANDING_HEIGHT_RETENTION = 1.0
 
 # Number of recent per-frame aspect ratios averaged together, per track,
 # before comparing against POSTURE_ASPECT_RATIO_THRESHOLD. Valid values: a

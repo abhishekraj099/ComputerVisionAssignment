@@ -98,16 +98,22 @@ DETECTION_MODEL_PATH = "models/yolov8n.pt"
 PERSON_CLASS_ID = 0
 
 # Minimum confidence, in the closed range 0.0-1.0, for a detection to be
-# kept. Exists to filter out low-confidence, noisy boxes. Lowered from an
-# earlier 0.5 to 0.35 during accuracy tuning against classroom footage:
-# small/distant/partially-occluded seated people (desks, angled CCTV view)
-# often score 0.35-0.5, and 0.5 was silently dropping them as false
-# negatives. 0.35 keeps more of those genuine detections; ByteTrack's own
-# two-stage matching (see tracker/bytetrack_tuned.yaml's track_low_thresh)
-# and track_high_thresh/new_track_thresh still filter out the weakest,
-# noisiest boxes before they can start a spurious track, so this does not
-# reintroduce the false-positive problem a blanket lower threshold would.
-DETECTION_CONFIDENCE_THRESHOLD = 0.35
+# kept. Exists to filter out low-confidence, noisy boxes. Lowered 0.5 ->
+# 0.35 -> 0.20 across two accuracy passes against crowded classroom-style
+# scenes, where person count was reading low (e.g. 11 detected of 16
+# visible). Measured on benchmark scenes built from real person imagery at
+# classroom scale: 0.35 scored 62.7% recall / 100% precision, 0.20 scores
+# 70.6% recall / 97.3% precision (F1 0.771 -> 0.818). Small, distant and
+# desk-occluded people frequently score 0.20-0.35, so 0.35 was discarding
+# genuine detections. The ~3-point precision cost is a small number of
+# duplicate boxes, which is the better trade for this use case.
+#
+# NOTE: this value only takes effect if ByteTrack's new_track_thresh (see
+# tracker/bytetrack_tuned.yaml) is at or below it - otherwise these
+# recovered detections are found but never allowed to start a track, and
+# the displayed person count (which counts tracks, not raw detections)
+# does not change at all. The two must be tuned together.
+DETECTION_CONFIDENCE_THRESHOLD = 0.20
 
 # IoU threshold used by YOLO's own NMS step (duplicate-box suppression).
 # Valid values: 0.0-1.0. Lowered from Ultralytics' default of 0.7 to 0.5 -
@@ -116,18 +122,28 @@ DETECTION_CONFIDENCE_THRESHOLD = 0.35
 # preserves two genuinely distinct, closely-seated people (their boxes
 # rarely overlap anywhere near 50% even at a crowded desk) as separate
 # detections.
+#
+# Re-tested during the recall-tuning pass at 0.45/0.50/0.60/0.70 and left
+# unchanged: at the chosen conf/imgsz, 0.45, 0.50 and 0.60 produce
+# byte-identical results (36 true positives, 1 false positive), while 0.70
+# adds false positives with no recall gain. 0.5 is therefore kept rather
+# than churned for no measured benefit.
 DETECTION_IOU_THRESHOLD = 0.5
 
 # Inference resolution (the side length YOLO resizes/pads the frame to
 # before the forward pass), in pixels; must be a multiple of 32. Valid
-# values: any such multiple of 32. Raised from Ultralytics' default of 640
-# to 832 - a wide classroom shot shrinks each person to a small fraction of
-# the frame, and YOLOv8 (like any anchor-free detector) systematically
-# misses more of those small boxes at 640. 832 is a deliberately moderate
-# step up (not 1280) since inference cost scales roughly with imgsz^2 and
-# this pipeline runs on CPU; see the Dependencies/Known Limitations section
-# of the README for the resulting FPS trade-off.
-DETECTION_IMAGE_SIZE = 832
+# values: any such multiple of 32. Raised 640 -> 832 -> 960 across two
+# accuracy passes - a wide classroom shot shrinks each person to a small
+# fraction of the frame, and YOLOv8 (like any anchor-free detector)
+# systematically misses more of those small boxes at lower resolutions.
+#
+# 960 was chosen empirically over 832 and 1088: measured on classroom-scale
+# benchmark scenes, 960 gave the best precision at equal-or-better recall
+# (70.6% recall / 97.3% precision), whereas 1088 recovered no additional
+# people but produced noticeably more duplicate boxes (down to 85% and, at
+# looser NMS, 71% precision) for ~25% less throughput. Bigger is therefore
+# not simply better here; 960 is the measured optimum.
+DETECTION_IMAGE_SIZE = 960
 
 # Compute device for YOLO inference. Valid values: "auto", "cpu", or
 # "cuda". "auto" (the default) picks GPU (CUDA) automatically if available,

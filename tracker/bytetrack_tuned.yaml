@@ -12,12 +12,14 @@
 
 tracker_type: bytetrack
 
-# First-stage (high-confidence) match threshold. Raised from Ultralytics'
-# default 0.25 to 0.5 to match this project's DETECTION_CONFIDENCE_THRESHOLD
-# floor (0.35) plus margin - keeps first-stage matching restricted to boxes
-# the detector is genuinely confident about, reducing ID switches caused by
-# matching against weak/noisy detections.
-track_high_thresh: 0.5
+# First-stage (high-confidence) match threshold. Set to 0.3, tracking this
+# project's DETECTION_CONFIDENCE_THRESHOLD (0.20) plus margin. It was 0.5
+# while that floor was 0.35; leaving it there after the floor dropped to
+# 0.20 would have excluded every newly-recovered small/occluded person from
+# first-stage association, so they would keep being re-matched only via the
+# weaker second stage (or not at all). Still comfortably above
+# track_low_thresh (0.1), so genuinely noisy boxes stay in the second stage.
+track_high_thresh: 0.3
 
 # Second-stage (low-score) match threshold, for recovering a track using a
 # weaker detection when no high-confidence box matched it this frame.
@@ -26,12 +28,16 @@ track_high_thresh: 0.5
 # behind a classmate/desk) keep their existing ID instead of being dropped.
 track_low_thresh: 0.1
 
-# Minimum confidence to start a brand-new track. Raised from Ultralytics'
-# default 0.25 to 0.4 - reduces spurious new tracks (and therefore
-# inflated/unstable person counts) from noisy, low-confidence detections,
-# while staying below track_high_thresh so a genuinely new, moderately
-# confident person can still be picked up promptly.
-new_track_thresh: 0.4
+# Minimum confidence to start a brand-new track. Lowered 0.4 -> 0.25, and
+# this is the single most important value for the reported "person count
+# reads low in crowded scenes" symptom. The displayed person count counts
+# *tracks*, not raw detections, so any detection below this threshold is
+# invisible in the UI no matter how low DETECTION_CONFIDENCE_THRESHOLD is
+# set. Measured directly: of the detections recovered by lowering that
+# floor to 0.20, every single one scored 0.25-0.26 and was being discarded
+# here, meaning the detection change alone would have improved the count by
+# exactly zero. 0.25 admits them while still rejecting the weakest boxes.
+new_track_thresh: 0.25
 
 # Number of frames a lost track is kept alive, awaiting a re-match, before
 # being dropped entirely. Raised from Ultralytics' default 30 to 60 -

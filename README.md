@@ -110,11 +110,11 @@ viewed from a fixed angled camera:
 
 | Parameter | Before | After | Why |
 |---|---|---|---|
-| `DETECTION_CONFIDENCE_THRESHOLD` | 0.5 | **0.35** | 0.5 dropped small/occluded seated people scoring 0.35–0.5 as false negatives |
+| `DETECTION_CONFIDENCE_THRESHOLD` | 0.5 | **0.20** | Small/desk-occluded people often score 0.20–0.35; higher floors discarded them (recall 62.7% → 70.6%) |
 | `DETECTION_IOU_THRESHOLD` (NMS) | 0.7 (default) | **0.5** | 0.7 let near-duplicate boxes for one person survive NMS, inflating person count |
-| `DETECTION_IMAGE_SIZE` (`imgsz`) | 640 (default) | **832** | Wide classroom shots shrink each person; 640 systematically missed small boxes |
-| `track_high_thresh` | 0.25 | **0.5** | Restricts first-stage matching to confident boxes → fewer ID switches |
-| `new_track_thresh` | 0.25 | **0.4** | Fewer spurious new tracks from noisy detections |
+| `DETECTION_IMAGE_SIZE` (`imgsz`) | 640 (default) | **960** | Wide shots shrink each person; measured optimum — 1088 added duplicates without recovering anyone |
+| `track_high_thresh` | 0.25 | **0.3** | Tracks the detection floor; at 0.5 recovered low-confidence people were excluded from first-stage matching |
+| `new_track_thresh` | 0.25 | **0.25** | Person Count counts *tracks*: at 0.4 every recovered 0.25–0.26 detection was discarded, so lowering `conf` alone changed nothing |
 | `track_buffer` | 30 | **60** | At low CPU FPS, 30 frames covered too short an occlusion → new IDs on reappearance |
 | `match_thresh` | 0.8 | **0.75** | Slightly more tolerant of CCTV box jitter → fewer rejected valid matches |
 | `POSTURE_ASPECT_RATIO_THRESHOLD` | 1.2 | **1.8** | Seated-at-desk boxes measure 1.3–1.7 and were wrongly called Standing |
@@ -126,8 +126,10 @@ viewed from a fixed angled camera:
 `tracker/bytetrack_tuned.yaml` keeps `tracker_type: bytetrack` — the algorithm
 is unchanged, only its thresholds are retuned.
 
-**Trade-off:** raising `imgsz` 640 → 832 costs roughly 17 → 12.5 FPS on CPU for
-the full pipeline; still comfortably real-time for this use case.
+**Measured result** on crowded classroom-scale benchmark scenes (51 people across
+three scenes, built from real person imagery): Person Count **26 → 34** (51.0% →
+66.7% recall) with ID stability unchanged (churn ratio 1.00). **Trade-off:** ~15%
+fewer FPS (5.4 → 4.6 on the densest scene); still ample for this use case.
 
 ## Requirements
 

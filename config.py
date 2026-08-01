@@ -319,16 +319,21 @@ ATTENDANCE_PANEL_LINE_SPACING = 30
 # --- Motion detection (Phase 6) ---
 # Smoothed (rolling-average) per-frame centroid displacement, in pixels,
 # above which a tracked person is classified MOVING rather than
-# STATIONARY. Valid values: a positive float. Raised from an earlier 15.0
-# to 20.0 during accuracy tuning: this pipeline runs CPU-only YOLO
-# inference at a few FPS (see DETECTION_IMAGE_SIZE), so the real-world time
-# between two *processed* frames is much larger than on a smooth 30fps
-# feed - ordinary detector-box jitter for a genuinely seated/still person
-# (a few pixels of centroid noise per box) was accumulating into a
-# displacement past 15.0 purely from that jitter, not real movement. 20.0
-# gives more headroom above typical jitter while still well below the
-# displacement a person actually walking/standing up produces.
-MOTION_DISTANCE_THRESHOLD = 20.0
+# STATIONARY. Valid values: a positive float.
+#
+# Lowered 20.0 -> 8.0. 20.0 was set on the assumption that the pipeline
+# skips frames, which would make each processed step a large jump. It does
+# not - app.process_frame() runs on consecutive frames, so a person walking
+# normally only shifts a few pixels per frame and was being reported
+# STATIONARY while visibly walking across the room.
+#
+# Measured per-frame smoothed displacement on two real clips:
+#   seated students (classroom.mp4): p50 0.55, p95 3.02, max 7.72 px
+#   walking people  (CCTV clip):     p50 4.09, p90 10.49, max 21.74 px
+# The two populations separate cleanly at 8.0, which sits just above the
+# seated maximum: no seated student in 5221 samples exceeds it, while
+# genuine walking runs well past it.
+MOTION_DISTANCE_THRESHOLD = 8.0
 
 # Number of recent frame-to-frame displacements averaged together, per
 # track, before comparing against MOTION_DISTANCE_THRESHOLD. Valid values:

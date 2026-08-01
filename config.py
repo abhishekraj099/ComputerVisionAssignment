@@ -368,15 +368,56 @@ MOTION_LABEL_OFFSET_Y = 15
 # --- Posture detection (Phase 7) ---
 # Smoothed (rolling-average) bounding-box height-to-width ratio above
 # which a tracked person is classified STANDING rather than SEATED. Valid
-# values: a positive float. This is a coarse heuristic, not a calibrated
-# measurement. Raised from an earlier 1.2 to 1.8 after live testing showed
-# 1.2 over-classified seated people as Standing: a YOLO "person" box for
-# someone seated at a desk (head/shoulders/torso visible, angled CCTV view)
-# commonly still measures a 1.3-1.7 height/width ratio, which 1.2 wrongly
-# called Standing. A standing full-body box is usually markedly taller
-# (2.0+), so 1.8 gives a clearer margin - but the right value still depends
-# heavily on camera angle/distance and may need tuning per deployment.
-POSTURE_ASPECT_RATIO_THRESHOLD = 1.8
+# values: a positive float.
+#
+# Raised 1.2 -> 1.8 -> 2.4, the last step measured directly on the supplied
+# classroom video (assets/classroom.mp4). Aspect ratios of all 188 detected
+# boxes across 8 frames spanning the clip:
+#     median 1.23   p75 1.54   p90 1.79   p95 1.95   max 3.32
+# In that footage the only genuinely standing person is the invigilator,
+# and his box measures 2.49-3.32 whenever he is clearly visible (2.55,
+# 2.64, 2.49, 2.58, 3.25, 3.32). Every misclassified seated student sat at
+# 2.38 or below - seated boxes reach 1.8-2.4 when the detector fits a tall,
+# loose box around someone leaning over a desk. 2.4 therefore separates the
+# two cleanly, with the seated cluster ending at 2.38 and the standing
+# cluster starting at 2.49.
+#
+# Trade-off, stated honestly: this is tuned for a fixed, elevated CCTV view
+# of a seated room. A standing person whose legs are hidden behind a desk
+# produces a much shorter box and will still read as SEATED. A lower camera
+# or a room where standing people are routinely occluded would need this
+# value reduced.
+POSTURE_ASPECT_RATIO_THRESHOLD = 2.4
+
+# Fraction of a track's own tallest-ever bounding box that its current box
+# must still reach for that track to keep its STANDING classification once
+# the aspect ratio alone stops confirming it. Valid values: 0.0-1.0, where
+# 1.0 effectively disables the rule (only the raw aspect ratio is used).
+#
+# Exists because aspect ratio alone cannot separate a standing person whose
+# legs are hidden behind a desk from a genuinely seated one - measured on
+# real footage a standing person reads as low as 1.23 while a seated one
+# reads up to 2.38, so the populations overlap and no threshold splits them.
+# A track's own history does separate them: someone standing behind a desk
+# was tall moments earlier, someone seated throughout never was. 0.75 keeps
+# STANDING while the box stays within a quarter of that track's maximum
+# height, and releases it when the box collapses further, which is what
+# happens when the person actually sits down.
+#
+# Measured on both clips (CCTV clip = everyone standing, classroom = all
+# seated but one invigilator), % of tracks reported STANDING:
+#     retention 1.00 (rule off) -> CCTV 49%   classroom 0.73/frame
+#     retention 0.55            -> CCTV 79%   classroom 0.73/frame
+#     retention 0.40            -> CCTV 87%   classroom 0.73/frame
+#     retention 0.30            -> CCTV 97%   classroom 0.73/frame
+# The classroom figure is identical at every value: students who are seated
+# from the start are never confirmed STANDING, so the rule cannot touch
+# them and carries no regression risk there. 0.40 is used rather than 0.30
+# because a person who genuinely sits at a desk drops to roughly 40% of
+# their standing box height, so a lower value would hold them STANDING
+# through a real sit-down - which is exactly the transition attendance
+# depends on.
+POSTURE_STANDING_HEIGHT_RETENTION = 0.40
 
 # Number of recent per-frame aspect ratios averaged together, per track,
 # before comparing against POSTURE_ASPECT_RATIO_THRESHOLD. Valid values: a

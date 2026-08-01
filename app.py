@@ -428,6 +428,7 @@ def load_posture_detector() -> PostureDetector:
         aspect_ratio_threshold=config.POSTURE_ASPECT_RATIO_THRESHOLD,
         history_size=config.POSTURE_HISTORY_SIZE,
         stale_track_timeout=config.POSTURE_STALE_TRACK_TIMEOUT,
+        standing_height_retention=config.POSTURE_STANDING_HEIGHT_RETENTION,
     )
 
 

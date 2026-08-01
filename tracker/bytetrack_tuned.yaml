@@ -38,20 +38,27 @@ track_low_thresh: 0.1
 new_track_thresh: 0.20
 
 # Number of frames a lost track is kept alive, awaiting a re-match, before
-# being dropped entirely. Raised from Ultralytics' default 30 to 60 -
-# directly targets "minimal ID switching / minimal lost tracks": at this
-# pipeline's low CPU FPS, 30 frames of buffer covers only a very short
-# real-world occlusion, so a person briefly blocked by another person or a
-# desk was easily getting a brand-new ID on reappearance. 60 roughly
-# doubles that occlusion tolerance.
-track_buffer: 60
+# being dropped entirely. Raised 30 -> 60 -> 300, the last step measured on
+# the supplied classroom video over 700 frames (tested together with the
+# match_thresh change below, so the two are not attributed individually):
+#     buffer  60 / match 0.75 -> avg count 20.4, 102 distinct IDs
+#     buffer 150 / match 0.75 -> avg count 20.4,  99 distinct IDs
+#     buffer 300 / match 0.80 -> avg count 20.6,  72 distinct IDs
+# In this footage students stay in their seats for the whole clip, so a
+# track that disappears is nearly always the same person flickering out of
+# detection rather than someone genuinely leaving. Keeping lost tracks alive
+# much longer lets them be re-matched to their original ID instead of being
+# issued a fresh one, which cut distinct IDs by 29% without costing count.
+track_buffer: 300
 
 # Association similarity (IoU-based cost) threshold used when matching
-# detections to existing tracks. Lowered slightly from Ultralytics' default
-# 0.8 to 0.75 - makes matching a little more tolerant of the box jitter
-# typical of an angled, somewhat-distant CCTV view, reducing ID switches
-# caused by a legitimate match being rejected on a single noisy frame.
-match_thresh: 0.75
+# detections to existing tracks. Set to 0.80 alongside the track_buffer
+# increase above (see that block for the measured comparison). Seated
+# students barely move between frames, so a genuine re-match has high IoU;
+# requiring a stronger match here stops a long-lived lost track from being
+# stolen by a neighbouring student's box, which is the failure mode a large
+# track_buffer would otherwise introduce in a densely packed room.
+match_thresh: 0.8
 
 # Fuse detection confidence into the matching cost alongside motion/IoU.
 # Left at Ultralytics' default (True) - this is what lets a low-confidence

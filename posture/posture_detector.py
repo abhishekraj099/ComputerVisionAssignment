@@ -123,7 +123,13 @@ class PostureDetector:
         draw_tracks()/person-count display.
     """
 
-    def __init__(self, aspect_ratio_threshold: float, history_size: int, stale_track_timeout: float):
+    def __init__(
+        self,
+        aspect_ratio_threshold: float,
+        history_size: int,
+        stale_track_timeout: float,
+        standing_height_retention: float = 1.0,
+    ):
         """
         Args:
             aspect_ratio_threshold: Smoothed height/width ratio above
@@ -147,10 +153,16 @@ class PostureDetector:
         self._aspect_ratio_threshold = aspect_ratio_threshold
         self._history_size = history_size
         self._stale_track_timeout = stale_track_timeout
+        self._standing_height_retention = standing_height_retention
 
         self._ratio_history: Dict[int, Deque[float]] = {}
         self._last_seen_time: Dict[int, float] = {}
         self._last_logged_state: Dict[int, bool] = {}
+        # Per-track evidence used by the height-retention rule (see update()):
+        # the tallest box ever seen for this track, and whether this track has
+        # ever been confidently classified STANDING by the aspect ratio alone.
+        self._max_height: Dict[int, int] = {}
+        self._ever_standing: Dict[int, bool] = {}
 
     @staticmethod
     def compute_aspect_ratio(track: TrackedPerson) -> float:
@@ -243,12 +255,47 @@ class PostureDetector:
             history.append(aspect_ratio)
             smoothed_ratio = sum(history) / len(history)
 
-            is_standing = smoothed_ratio > self._aspect_ratio_threshold
+            # Primary signal, unchanged: a box clearly taller than it is wide
+            # is a standing person.
+            ratio_says_standing = smoothed_ratio > self._aspect_ratio_threshold
+
+            # Height-retention rule. The aspect ratio alone cannot separate a
+            # standing person whose legs are hidden behind a desk (short, wide
+            # box) from a genuinely seated one - measured on real footage, a
+            # standing person can read 1.23 while a seated person reads 2.38,
+            # so the two populations overlap and no threshold splits them.
+            #
+            # What does distinguish them is the track's own history: someone
+            # standing behind a desk was fully visible, and tall, moments
+            # earlier; someone who has been seated the whole time never was.
+            # So once a track has been confidently called STANDING by the
+            # ratio, it stays STANDING while its box remains at least
+            # `standing_height_retention` of the tallest box ever seen for
+            # that track - and flips to SEATED once the box collapses below
+            # that, which is what actually happens when a person sits down.
+            #
+            # This is still pure bounding-box geometry: no pose estimation, no
+            # extra model, only the box dimensions this module already had.
+            current_height = track.y2 - track.y1
+            max_height = max(self._max_height.get(track.track_id, 0), current_height)
+            self._max_height[track.track_id] = max_height
+
+            if ratio_says_standing:
+                self._ever_standing[track.track_id] = True
+                is_standing = True
+            elif self._ever_standing.get(track.track_id) and max_height > 0:
+                is_standing = current_height >= (self._standing_height_retention * max_height)
+                if not is_standing:
+                    # Box has collapsed well below this track's own maximum:
+                    # treat as a genuine sit-down and stop retaining STANDING.
+                    self._ever_standing[track.track_id] = False
+            else:
+                is_standing = False
 
             logger.debug(
-                "Track %s aspect_ratio=%.2f smoothed=%.2f threshold=%.2f -> %s",
+                "Track %s aspect_ratio=%.2f smoothed=%.2f threshold=%.2f height=%d max=%d -> %s",
                 track.track_id, aspect_ratio, smoothed_ratio, self._aspect_ratio_threshold,
-                "STANDING" if is_standing else "SEATED",
+                current_height, max_height, "STANDING" if is_standing else "SEATED",
             )
 
             previous_logged_state = self._last_logged_state.get(track.track_id)
@@ -298,6 +345,8 @@ class PostureDetector:
             self._ratio_history.pop(track_id, None)
             self._last_seen_time.pop(track_id, None)
             self._last_logged_state.pop(track_id, None)
+            self._max_height.pop(track_id, None)
+            self._ever_standing.pop(track_id, None)
 
 
 def draw_posture_states(

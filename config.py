@@ -98,9 +98,36 @@ DETECTION_MODEL_PATH = "models/yolov8n.pt"
 PERSON_CLASS_ID = 0
 
 # Minimum confidence, in the closed range 0.0-1.0, for a detection to be
-# kept. Exists to filter out low-confidence, noisy boxes; 0.5 is a common,
-# reasonable default for YOLOv8 person detection.
-DETECTION_CONFIDENCE_THRESHOLD = 0.5
+# kept. Exists to filter out low-confidence, noisy boxes. Lowered from an
+# earlier 0.5 to 0.35 during accuracy tuning against classroom footage:
+# small/distant/partially-occluded seated people (desks, angled CCTV view)
+# often score 0.35-0.5, and 0.5 was silently dropping them as false
+# negatives. 0.35 keeps more of those genuine detections; ByteTrack's own
+# two-stage matching (see tracker/bytetrack_tuned.yaml's track_low_thresh)
+# and track_high_thresh/new_track_thresh still filter out the weakest,
+# noisiest boxes before they can start a spurious track, so this does not
+# reintroduce the false-positive problem a blanket lower threshold would.
+DETECTION_CONFIDENCE_THRESHOLD = 0.35
+
+# IoU threshold used by YOLO's own NMS step (duplicate-box suppression).
+# Valid values: 0.0-1.0. Lowered from Ultralytics' default of 0.7 to 0.5 -
+# 0.7 was letting near-duplicate boxes for the same person survive NMS
+# (inflating person-count/false positives), while 0.5 still comfortably
+# preserves two genuinely distinct, closely-seated people (their boxes
+# rarely overlap anywhere near 50% even at a crowded desk) as separate
+# detections.
+DETECTION_IOU_THRESHOLD = 0.5
+
+# Inference resolution (the side length YOLO resizes/pads the frame to
+# before the forward pass), in pixels; must be a multiple of 32. Valid
+# values: any such multiple of 32. Raised from Ultralytics' default of 640
+# to 832 - a wide classroom shot shrinks each person to a small fraction of
+# the frame, and YOLOv8 (like any anchor-free detector) systematically
+# misses more of those small boxes at 640. 832 is a deliberately moderate
+# step up (not 1280) since inference cost scales roughly with imgsz^2 and
+# this pipeline runs on CPU; see the Dependencies/Known Limitations section
+# of the README for the resulting FPS trade-off.
+DETECTION_IMAGE_SIZE = 832
 
 # Compute device for YOLO inference. Valid values: "auto", "cpu", or
 # "cuda". "auto" (the default) picks GPU (CUDA) automatically if available,
@@ -149,12 +176,16 @@ FPS_TEXT_POSITION = (10, 30)
 PERSON_COUNT_TEXT_POSITION = (10, 70)
 
 # --- Multi-object tracking (Phase 3) ---
-# Name of the Ultralytics-bundled tracker config. Valid values: any tracker
-# config Ultralytics ships or resolves by name (e.g. "bytetrack.yaml",
-# "botsort.yaml"). "bytetrack.yaml" selects Ultralytics' built-in ByteTrack
-# integration, per the Phase 3 requirement to use ByteTrack and no custom
-# tracker code.
-TRACKER_CONFIG = "bytetrack.yaml"
+# Path to the ByteTrack config Ultralytics' `.track()` API loads. Valid
+# values: any tracker config Ultralytics ships by name (e.g.
+# "bytetrack.yaml", "botsort.yaml"), or a filesystem path to a custom
+# ByteTrack YAML, as here. Points at tracker/bytetrack_tuned.yaml - the
+# *same* ByteTrack algorithm (tracker_type: bytetrack, unchanged), just
+# with its thresholds retuned for this project's classroom-CCTV use case
+# (see that file's comments for each value and why). This is a config
+# change, not an algorithm change, and satisfies the Phase 3 requirement to
+# use ByteTrack with no custom tracker code exactly as before.
+TRACKER_CONFIG = "tracker/bytetrack_tuned.yaml"
 
 # Vertical gap, in pixels, between the "ID: <n>" line and the
 # "Person <confidence>" line drawn above/below each tracked box. Valid
@@ -253,18 +284,26 @@ ATTENDANCE_PANEL_LINE_SPACING = 30
 # --- Motion detection (Phase 6) ---
 # Smoothed (rolling-average) per-frame centroid displacement, in pixels,
 # above which a tracked person is classified MOVING rather than
-# STATIONARY. Valid values: a positive float. Exists so sensitivity can be
-# tuned per camera resolution/distance without touching detection code;
-# 15.0 is a reasonable starting point for a typical webcam-resolution feed.
-MOTION_DISTANCE_THRESHOLD = 15.0
+# STATIONARY. Valid values: a positive float. Raised from an earlier 15.0
+# to 20.0 during accuracy tuning: this pipeline runs CPU-only YOLO
+# inference at a few FPS (see DETECTION_IMAGE_SIZE), so the real-world time
+# between two *processed* frames is much larger than on a smooth 30fps
+# feed - ordinary detector-box jitter for a genuinely seated/still person
+# (a few pixels of centroid noise per box) was accumulating into a
+# displacement past 15.0 purely from that jitter, not real movement. 20.0
+# gives more headroom above typical jitter while still well below the
+# displacement a person actually walking/standing up produces.
+MOTION_DISTANCE_THRESHOLD = 20.0
 
 # Number of recent frame-to-frame displacements averaged together, per
 # track, before comparing against MOTION_DISTANCE_THRESHOLD. Valid values:
-# a positive integer. Exists to prevent a single noisy/jittery frame from
-# flipping the reported motion state; 5 smooths out brief jitter while
-# still reacting to genuine movement within about a fifth of a second at
-# typical processing rates.
-MOTION_HISTORY_SIZE = 5
+# a positive integer. Raised from an earlier 5 to 7 alongside the
+# MOTION_DISTANCE_THRESHOLD increase above, for the same reason: a slightly
+# wider smoothing window further damps single-frame detector jitter at this
+# pipeline's low CPU frame rate, at the cost of reacting marginally slower
+# to a genuine start/stop of movement (still under a second at typical
+# processing rates).
+MOTION_HISTORY_SIZE = 7
 
 # How long, in seconds, MotionDetector remembers a track ID's centroid
 # history after that track ID stops appearing in the tracked-people list,
@@ -301,10 +340,13 @@ POSTURE_ASPECT_RATIO_THRESHOLD = 1.8
 
 # Number of recent per-frame aspect ratios averaged together, per track,
 # before comparing against POSTURE_ASPECT_RATIO_THRESHOLD. Valid values: a
-# positive integer. Exists to prevent a single noisy/jittery frame (e.g. a
-# momentarily clipped box) from flipping the reported posture; 5 mirrors
-# MOTION_HISTORY_SIZE's smoothing/responsiveness trade-off.
-POSTURE_HISTORY_SIZE = 5
+# positive integer. Raised from an earlier 5 to 8 after live testing on
+# classroom footage showed several tracks' logged posture oscillating
+# (STANDING <-> SEATED within a few seconds) purely from box-aspect-ratio
+# jitter right around the threshold, not an actual posture change - a
+# wider averaging window damps that jitter at the cost of reacting a little
+# slower to a genuine sit/stand transition.
+POSTURE_HISTORY_SIZE = 8
 
 # How long, in seconds, PostureDetector remembers a track ID's aspect-ratio
 # history after that track ID stops appearing in the tracked-people list,

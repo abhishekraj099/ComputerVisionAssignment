@@ -44,7 +44,7 @@ Which future modules will consume this module's output:
     rather than duplicating their logic.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import List, Optional
 
@@ -229,7 +229,11 @@ class OccupancyDetector:
                 if not self._last_call_was_blur_skip:
                     logger.info("Occupancy update skipped this frame: frame quality is poor (blurry).")
                 self._last_call_was_blur_skip = True
-                return self._last_state
+                # Keep the previous *decision*, but report this frame's real
+                # (poor) quality - returning the prior snapshot verbatim would
+                # advertise frame_quality_ok=True on a frame we just rejected
+                # as untrustworthy, contradicting the Frame Quality panel.
+                return replace(self._last_state, frame_quality_ok=False)
 
             self._last_call_was_blur_skip = False
 

@@ -106,7 +106,15 @@ class PersonDetector:
         into load_person_tracker() for that purpose.
     """
 
-    def __init__(self, model_path: str, confidence_threshold: float, person_class_id: int, device: str = "auto"):
+    def __init__(
+        self,
+        model_path: str,
+        confidence_threshold: float,
+        person_class_id: int,
+        device: str = "auto",
+        iou_threshold: float = 0.7,
+        image_size: int = 640,
+    ):
         """
         Load the YOLOv8 model and resolve the compute device.
 
@@ -117,6 +125,12 @@ class PersonDetector:
                 detection.
             person_class_id: COCO class ID to filter on (person = 0).
             device: "auto", "cpu", or "cuda". "auto" uses CUDA if available.
+            iou_threshold: NMS IoU threshold for duplicate-box suppression,
+                in 0.0-1.0 (see config.DETECTION_IOU_THRESHOLD). Defaults to
+                Ultralytics' own default (0.7) if not given.
+            image_size: Inference resolution, in pixels (must be a multiple
+                of 32; see config.DETECTION_IMAGE_SIZE). Defaults to
+                Ultralytics' own default (640) if not given.
 
         Raises:
             RuntimeError: If the model weights cannot be loaded (missing
@@ -137,6 +151,8 @@ class PersonDetector:
         self._confidence_threshold = confidence_threshold
         self._person_class_id = person_class_id
         self._device = self._resolve_device(device)
+        self._iou_threshold = iou_threshold
+        self._image_size = image_size
 
         logger.info("Loading YOLOv8 model from '%s' on device '%s' ...", model_path, self._device)
         try:
@@ -205,6 +221,8 @@ class PersonDetector:
                 source=frame,
                 classes=[self._person_class_id],
                 conf=self._confidence_threshold,
+                iou=self._iou_threshold,
+                imgsz=self._image_size,
                 device=self._device,
                 verbose=False,
             )

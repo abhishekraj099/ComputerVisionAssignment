@@ -135,6 +135,8 @@ class PersonTracker:
         person_class_id: int,
         confidence_threshold: float,
         tracker_config: str,
+        iou_threshold: float = 0.7,
+        image_size: int = 640,
     ):
         """
         Store the shared model and tracking configuration.
@@ -148,7 +150,15 @@ class PersonTracker:
             confidence_threshold: Minimum confidence, in 0.0-1.0, to keep a
                 tracked box.
             tracker_config: Name of the Ultralytics tracker config to use
-                (e.g. "bytetrack.yaml").
+                (e.g. "bytetrack.yaml"), or a filesystem path to a custom
+                one (see config.TRACKER_CONFIG).
+            iou_threshold: NMS IoU threshold for YOLO's own duplicate-box
+                suppression, in 0.0-1.0 (see config.DETECTION_IOU_THRESHOLD).
+                Defaults to Ultralytics' own default (0.7) if not given.
+            image_size: Inference resolution YOLO resizes the frame to
+                before the forward pass, in pixels (must be a multiple of
+                32; see config.DETECTION_IMAGE_SIZE). Defaults to
+                Ultralytics' own default (640) if not given.
 
         Side effects:
             None. Construction is pure bookkeeping - it does not touch the
@@ -164,6 +174,8 @@ class PersonTracker:
         self._person_class_id = person_class_id
         self._confidence_threshold = confidence_threshold
         self._tracker_config = tracker_config
+        self._iou_threshold = iou_threshold
+        self._image_size = image_size
         self._initialized = False
 
     def track(self, frame) -> List[TrackedPerson]:
@@ -204,6 +216,8 @@ class PersonTracker:
                 tracker=self._tracker_config,
                 classes=[self._person_class_id],
                 conf=self._confidence_threshold,
+                iou=self._iou_threshold,
+                imgsz=self._image_size,
                 device=self._device,
                 verbose=False,
             )

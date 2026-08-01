@@ -1,0 +1,56 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+#
+# ByteTrack tracker config for this project, tuned from Ultralytics'
+# bundled defaults for classroom CCTV footage: mostly-seated, sometimes
+# tightly spaced/partially-occluded people, viewed from a fixed angled
+# camera, processed at a few FPS on CPU. This is still ByteTrack
+# (tracker_type: bytetrack, unchanged) - only the thresholds below differ
+# from Ultralytics' shipped bytetrack.yaml. See config.TRACKER_CONFIG for
+# how this file is wired in.
+#
+# Docs: https://docs.ultralytics.com/modes/track
+
+tracker_type: bytetrack
+
+# First-stage (high-confidence) match threshold. Raised from Ultralytics'
+# default 0.25 to 0.5 to match this project's DETECTION_CONFIDENCE_THRESHOLD
+# floor (0.35) plus margin - keeps first-stage matching restricted to boxes
+# the detector is genuinely confident about, reducing ID switches caused by
+# matching against weak/noisy detections.
+track_high_thresh: 0.5
+
+# Second-stage (low-score) match threshold, for recovering a track using a
+# weaker detection when no high-confidence box matched it this frame.
+# Left at Ultralytics' default (0.1) - this is exactly the safety net that
+# lets a briefly-occluded or low-confidence person (e.g. partially hidden
+# behind a classmate/desk) keep their existing ID instead of being dropped.
+track_low_thresh: 0.1
+
+# Minimum confidence to start a brand-new track. Raised from Ultralytics'
+# default 0.25 to 0.4 - reduces spurious new tracks (and therefore
+# inflated/unstable person counts) from noisy, low-confidence detections,
+# while staying below track_high_thresh so a genuinely new, moderately
+# confident person can still be picked up promptly.
+new_track_thresh: 0.4
+
+# Number of frames a lost track is kept alive, awaiting a re-match, before
+# being dropped entirely. Raised from Ultralytics' default 30 to 60 -
+# directly targets "minimal ID switching / minimal lost tracks": at this
+# pipeline's low CPU FPS, 30 frames of buffer covers only a very short
+# real-world occlusion, so a person briefly blocked by another person or a
+# desk was easily getting a brand-new ID on reappearance. 60 roughly
+# doubles that occlusion tolerance.
+track_buffer: 60
+
+# Association similarity (IoU-based cost) threshold used when matching
+# detections to existing tracks. Lowered slightly from Ultralytics' default
+# 0.8 to 0.75 - makes matching a little more tolerant of the box jitter
+# typical of an angled, somewhat-distant CCTV view, reducing ID switches
+# caused by a legitimate match being rejected on a single noisy frame.
+match_thresh: 0.75
+
+# Fuse detection confidence into the matching cost alongside motion/IoU.
+# Left at Ultralytics' default (True) - this is what lets a low-confidence
+# but well-positioned detection (e.g. a partially occluded seated person)
+# still match its existing track instead of being dropped.
+fuse_score: True

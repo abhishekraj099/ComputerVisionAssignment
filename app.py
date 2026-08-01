@@ -275,6 +275,8 @@ def load_person_detector():
         confidence_threshold=config.DETECTION_CONFIDENCE_THRESHOLD,
         person_class_id=config.PERSON_CLASS_ID,
         device=config.DETECTION_DEVICE,
+        iou_threshold=config.DETECTION_IOU_THRESHOLD,
+        image_size=config.DETECTION_IMAGE_SIZE,
     )
 
 
@@ -315,6 +317,8 @@ def load_person_tracker(detector):
         person_class_id=config.PERSON_CLASS_ID,
         confidence_threshold=config.DETECTION_CONFIDENCE_THRESHOLD,
         tracker_config=config.TRACKER_CONFIG,
+        iou_threshold=config.DETECTION_IOU_THRESHOLD,
+        image_size=config.DETECTION_IMAGE_SIZE,
     )
 
 

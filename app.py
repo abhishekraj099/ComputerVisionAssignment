@@ -372,6 +372,7 @@ def load_line_crossing_detector(frame_width: Optional[int] = None, frame_height:
     return LineCrossingDetector(
         line_start=line_start,
         line_end=line_end,
+        hysteresis_margin=config.LINE_CROSSING_HYSTERESIS_MARGIN,
         stale_track_timeout=config.LINE_CROSSING_STALE_TRACK_TIMEOUT,
         event_cooldown=config.LINE_CROSSING_EVENT_COOLDOWN,
     )

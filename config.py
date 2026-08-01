@@ -264,12 +264,40 @@ LINE_CROSSING_STALE_TRACK_TIMEOUT = 300.0
 
 # How long, in seconds, LineCrossingDetector suppresses further ENTRY/EXIT
 # events for a track ID after one fires for it. Valid values: a positive
-# float. Exists to absorb detector/tracker jitter that makes a centroid
-# flicker back and forth right at the line, which would otherwise be
-# reported as several rapid, spurious crossings instead of the one real
-# one. 1.0 second is short enough not to mask a second, genuine crossing
-# by the same person shortly after the first.
+# float. This is the *secondary* of two independent anti-bounce safeguards
+# (see LINE_CROSSING_HYSTERESIS_MARGIN below for the primary one, which is
+# what actually prevents jitter-driven events rather than merely
+# rate-limiting them). Deliberately kept at 1.0 rather than raised: with
+# the hysteresis dead zone in place, producing two events already requires
+# genuinely traversing the full 2x margin band, so a longer cooldown buys
+# no extra bounce protection and instead starts masking real behavior -
+# at 2.0 it was observed swallowing the EXIT of someone who genuinely
+# walked in and straight back out within two seconds, which is exactly the
+# "person enters and immediately leaves" case this project must report.
 LINE_CROSSING_EVENT_COOLDOWN = 1.0
+
+# Perpendicular distance from the virtual line, in pixels, that a tracked
+# person's centroid must be *past* the line before its side is considered
+# confirmed. Valid values: a non-negative float (0.0 disables the dead
+# zone, restoring the previous raw-sign behavior).
+#
+# This is the primary fix for ENTRY/EXIT "bouncing" - repeated
+# EXIT/ENTRY/EXIT/ENTRY events for one track ID that never actually
+# crossed. The cause is that a bounding-box centroid jitters by several
+# pixels frame-to-frame purely from detector noise, so a person standing
+# or seated *near* the line has their centroid flip sides repeatedly
+# without moving. The event cooldown alone cannot fix this: it only limits
+# how often those spurious events fire, not whether they fire at all.
+#
+# With a dead zone, a centroid within this many pixels of the line is
+# treated as "ambiguous" - its confirmed side is left unchanged and no
+# event can fire - so a crossing is only ever reported once the centroid
+# has committed to a definite side. A person must therefore travel the
+# full 2x margin band to produce a second event, which ordinary jitter
+# cannot do. 25.0 comfortably exceeds typical detector jitter (measured
+# under ~10px) while staying far smaller than the displacement of anyone
+# genuinely walking through the doorway.
+LINE_CROSSING_HYSTERESIS_MARGIN = 25.0
 
 # --- Attendance panel (Phase 5) ---
 # (x, y) pixel position, from the frame's top-left corner, where the

@@ -43,6 +43,7 @@ Which future modules will consume this module's output:
     unique-entries total) rather than re-deriving crossings itself.
 """
 
+import math
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -93,7 +94,8 @@ class CrossingEvent:
 
 def _signed_side(point: Tuple[int, int], line_start: Tuple[int, int], line_end: Tuple[int, int]) -> float:
     """
-    Compute which side of a line a point falls on, as a signed value.
+    Compute which side of a line a point falls on, and how far past it, as
+    a signed perpendicular distance in pixels.
 
     Args:
         point: (x, y) pixel coordinates to test.
@@ -104,17 +106,36 @@ def _signed_side(point: Tuple[int, int], line_start: Tuple[int, int], line_end: 
         A signed float: 0.0 if the point lies exactly on the line; a
         consistent positive value for every point on one side, and a
         consistent negative value for every point on the other. For the
-        default horizontal LINE_START/LINE_END in config.py, a positive
-        result means "below the line" (further down the frame) and a
-        negative result means "above the line" - i.e. this is the
-        cross-product test used to detect top-to-bottom vs bottom-to-top
-        motion.
+        default horizontal line in config.py, a positive result means
+        "below the line" (further down the frame) and a negative result
+        means "above the line" - i.e. this is the same cross-product test
+        used to detect top-to-bottom vs bottom-to-top motion.
+
+        The magnitude is the point's perpendicular distance from the line,
+        **in pixels**. The raw cross product is scaled by the line's own
+        length, which would make the magnitude meaningless as a distance
+        (and dependent on how long the configured line happens to be), so
+        it is divided by that length here. Only the magnitude changes -
+        the sign, and therefore every crossing decision derived from it, is
+        identical to the unnormalized cross product. This is what lets
+        LineCrossingDetector apply a dead zone measured in real pixels
+        (see config.LINE_CROSSING_HYSTERESIS_MARGIN).
     """
     line_dx = line_end[0] - line_start[0]
     line_dy = line_end[1] - line_start[1]
     point_dx = point[0] - line_start[0]
     point_dy = point[1] - line_start[1]
-    return (line_dx * point_dy) - (line_dy * point_dx)
+    cross_product = (line_dx * point_dy) - (line_dy * point_dx)
+
+    line_length = math.hypot(line_dx, line_dy)
+    if line_length == 0:
+        # Degenerate "line" (both endpoints identical) - no meaningful
+        # side or distance exists. Report "on the line" so the caller's
+        # dead-zone check treats every point as ambiguous and no spurious
+        # crossing is ever reported, rather than dividing by zero.
+        return 0.0
+
+    return cross_product / line_length
 
 
 class LineCrossingDetector:
@@ -151,22 +172,30 @@ class LineCrossingDetector:
         display.
 
     Robustness note (memory growth and event jitter):
-        Two independent safeguards protect this class from two different
-        long-running failure modes, both purely internal to this class -
-        neither changes the crossing algorithm or its output for a normal,
-        well-separated crossing:
+        Three independent safeguards protect this class from different
+        failure modes, all purely internal to this class - none changes the
+        crossing algorithm or its output for a normal, well-separated
+        crossing:
         - `stale_track_timeout` bounds memory: a track ID not seen for
           longer than this many seconds has its remembered side, last-seen
           time, and last-event time evicted entirely, so the internal
           dicts cannot grow forever as new, distinct people pass through
           over a long session.
-        - `event_cooldown` bounds duplicate events: once an event fires
-          for a track ID, no further event fires for that same track ID
-          until `event_cooldown` seconds have passed, even if its centroid
-          keeps flipping sides (e.g. due to detector/tracker jitter right
-          at the line). Side tracking itself is never suppressed - only
-          the emission of a *new* CrossingEvent is - so a genuine crossing
-          that happens well after the cooldown window is unaffected.
+        - `hysteresis_margin` prevents bouncing (the primary safeguard):
+          a centroid within this many pixels of the line is treated as
+          ambiguous - its confirmed side is left unchanged and no event
+          can fire. Because a track's stored side only ever updates once
+          the centroid is decisively past the line, a person loitering or
+          seated near the line cannot produce the repeated
+          ENTRY/EXIT/ENTRY/EXIT sequence that a raw sign test produces
+          from a few pixels of detector jitter. Producing two events now
+          requires genuinely traversing the full 2x margin band.
+        - `event_cooldown` bounds duplicate events (a secondary backstop):
+          once an event fires for a track ID, no further event fires for
+          that same track ID until `event_cooldown` seconds have passed.
+          Side tracking itself is never suppressed - only the emission of
+          a *new* CrossingEvent is - so a genuine crossing that happens
+          well after the cooldown window is unaffected.
     """
 
     def __init__(
@@ -175,6 +204,7 @@ class LineCrossingDetector:
         line_end: Tuple[int, int],
         stale_track_timeout: float,
         event_cooldown: float,
+        hysteresis_margin: float = 0.0,
     ):
         """
         Args:
@@ -189,6 +219,11 @@ class LineCrossingDetector:
             event_cooldown: How long, in seconds, to suppress further
                 events for a track ID after one fires for it (see
                 config.LINE_CROSSING_EVENT_COOLDOWN).
+            hysteresis_margin: Perpendicular distance from the line, in
+                pixels, a centroid must be past before its side counts as
+                confirmed (see config.LINE_CROSSING_HYSTERESIS_MARGIN).
+                Defaults to 0.0, which disables the dead zone and restores
+                pure raw-sign behavior.
 
         Side effects:
             None.
@@ -197,6 +232,7 @@ class LineCrossingDetector:
         self._line_end = line_end
         self._stale_track_timeout = stale_track_timeout
         self._event_cooldown = event_cooldown
+        self._hysteresis_margin = hysteresis_margin
         self._last_side: Dict[int, float] = {}
         self._last_seen_time: Dict[int, float] = {}
         self._last_event_time: Dict[int, float] = {}
@@ -278,23 +314,32 @@ class LineCrossingDetector:
         for track in tracks:
             try:
                 centroid = self.compute_centroid(track)
-                side = _signed_side(centroid, self._line_start, self._line_end)
+                signed_distance = _signed_side(centroid, self._line_start, self._line_end)
             except Exception as exc:
                 logger.warning("Skipping line-crossing check for track %s: invalid centroid (%s)", track.track_id, exc)
                 continue
 
             logger.debug(
-                "Track %s centroid=%s side=%.1f (line %s -> %s)",
-                track.track_id, centroid, side, self._line_start, self._line_end,
+                "Track %s centroid=%s signed_distance=%.1fpx margin=%.1fpx (line %s -> %s)",
+                track.track_id, centroid, signed_distance, self._hysteresis_margin,
+                self._line_start, self._line_end,
             )
 
-            if side == 0:
-                # Exactly on the line: ambiguous. Wait for a future frame
-                # where the centroid has moved to a definite side, rather
-                # than guessing and risking a spurious event. Still counts
-                # as "seen" for staleness purposes.
+            if abs(signed_distance) <= self._hysteresis_margin:
+                # Inside the dead zone (or exactly on the line): too close
+                # to the line to tell a real crossing apart from ordinary
+                # centroid jitter. Deliberately leave this track's last
+                # *confirmed* side untouched and emit nothing, so a person
+                # loitering near the line cannot produce the repeated
+                # ENTRY/EXIT/ENTRY bouncing that a raw sign test does.
+                # Still counts as "seen" for staleness purposes.
                 self._last_seen_time[track.track_id] = now
                 continue
+
+            # Outside the dead zone: the side is now unambiguous. Collapse
+            # to +/-1 so what is stored is the confirmed side itself, not a
+            # distance that later comparisons would have to re-interpret.
+            side = 1.0 if signed_distance > 0 else -1.0
 
             previous_side = self._last_side.get(track.track_id)
             crossing_event_type = None
